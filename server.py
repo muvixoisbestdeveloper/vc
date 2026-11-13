@@ -20,7 +20,7 @@ Run:  uvicorn server:app --host 0.0.0.0 --port 8000
 Env:  EGRESS_PROXY        socks5://... or http://...   (set by scripts/relay.sh)
       IMPERSONATE         chrome (default) | safari | edge | off
       IMPERSONATE_ROTATE  chrome,safari,edge,chrome-131  targets tried on 410/403
-      SEARCH_CACHE_TTL / EXTRACT_CACHE_TTL   seconds, 0 = no cache
+      SEARCH_CACHE_TTL   seconds, 0 = no cache
 """
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -83,7 +83,8 @@ def _make_cache(ttl: int, size: int):
 
 
 main.search_cache = _make_cache(int(os.getenv("SEARCH_CACHE_TTL", "600")), 2048)
-main.extraction_cache = _make_cache(int(os.getenv("EXTRACT_CACHE_TTL", "600")), 1024)
+# Stream URLs carry expiring provider credentials, so extraction is never cached.
+main.extraction_cache = _NoCache()
 
 
 # ---------------------------------------------------------------- curl_cffi (browser TLS fingerprint)
@@ -471,10 +472,14 @@ async def extract_endpoint(url: str = ""):
         return JSONResponse({"status": "error", "error": f"{locked} is locked", "locked": True}, status_code=423)
     loop = asyncio.get_running_loop()
     try:
-        return JSONResponse(await loop.run_in_executor(main.thread_pool, extract, target))
+        result = await loop.run_in_executor(main.thread_pool, extract, target)
+        return JSONResponse(result, headers={"Cache-Control": "no-store, max-age=0"})
     except Exception as e:  # never leak a 500 with a stack trace
         log.exception("extract crashed")
-        return JSONResponse({"status": "error", "error": str(e)[:300], "url": target})
+        return JSONResponse(
+            {"status": "error", "error": str(e)[:300], "url": target},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
 
 @app.get("/proxy-image")

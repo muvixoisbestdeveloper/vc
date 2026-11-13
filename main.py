@@ -1322,8 +1322,8 @@ def collect_video_qualities(formats) -> list:
 
 
 def extract_with_ytdlp(url: str) -> dict:
-    if url in extraction_cache:
-        return extraction_cache[url]
+    # Extracted media URLs are short-lived CDN credentials. Never reuse a
+    # previous extraction for playback or reconnect requests.
 
     provider = "xvideos"
     if "pornhub.com" in url:
@@ -1427,7 +1427,6 @@ def extract_with_ytdlp(url: str) -> dict:
                 "provider": provider,
             }
 
-            extraction_cache[url] = result
             return result
 
         except Exception as e:
@@ -1469,13 +1468,16 @@ async def explore(q: str = "brazzers", page: int = 1, provider: str = "xvideos")
 @app.get("/api/extract")
 async def extract_endpoint(url: str):
     if not url:
-        return JSONResponse({"status": "error", "error": "Missing URL"})
+        return JSONResponse(
+            {"status": "error", "error": "Missing URL"},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
     target_url = url.strip()
     loop = asyncio.get_running_loop()
     res = await loop.run_in_executor(
         thread_pool, extract_with_ytdlp, target_url
     )
-    return JSONResponse(res)
+    return JSONResponse(res, headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @app.get("/proxy-image")

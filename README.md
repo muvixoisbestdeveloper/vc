@@ -97,8 +97,16 @@ For Docker/VPS, `docker compose up -d --build` remains the easiest option. Gener
 | `IMPERSONATE` | `chrome` | Browser TLS fingerprint impersonation (`chrome`, `safari`, `edge`, `off`) |
 | `IMPERSONATE_ROTATE` | `chrome,safari,edge,chrome-131` | Fingerprint fallback targets on 403/410 errors |
 | `SEARCH_CACHE_TTL` | `180` | Cache time in seconds for search queries |
-| `EXTRACT_CACHE_TTL` | `600` | Cache time in seconds for stream extraction |
 | `DISABLED_PROVIDERS` | *(empty)* | Optional hard lock, e.g. `pornhub,xnxx`. Explore/extract answer `423`. The Worker admin panel is the main switch. |
+
+Stream extraction is deliberately not cached: provider media URLs carry short-lived CDN credentials, and reusing a cached extraction can make the player loop through qualities without starting playback. `/api/extract` responses also send `Cache-Control: no-store`.
+
+## Playback reliability update
+
+- Every reconnect resolves a fresh provider URL instead of reusing an expired extraction.
+- The player bounds both source-load and play-start waits, ignores stale media errors from a previous quality, and retries HLS loading after a CDN timeout.
+- HLS fallback-script loading and extraction responses cannot wait forever.
+- The Core and Worker tests cover these cases; live provider playback still needs a real-browser check after deployment.
 
 ---
 
@@ -108,7 +116,7 @@ For Docker/VPS, `docker compose up -d --build` remains the easiest option. Gener
 - Search shim no longer forces an 8s minimum timeout (metadata lookups were slowing every extract)
 - YouPorn yt-dlp fallback used a non-existent `ypsearch` prefix and ignored paging: fixed
 - `/api/explore` validates `q`, `page`, `provider`
-- Cache defaults now match this README (180s / 600s)
+- Search cache defaults are 180 seconds; stream extraction is not cached
 - Docker: non-root user, healthcheck, proxy headers; `.dockerignore`; Render/Railway health checks
 - `yt-dlp` pin relaxed to a version that exists on PyPI
 
@@ -143,7 +151,7 @@ For Docker/VPS, `docker compose up -d --build` remains the easiest option. Gener
 
 ## v9 changes
 
-- Card poster resolution uses a fast provider-page metadata lookup and reuses extracted metadata when available; the UI keeps the search thumbnail visible while the canonical poster is fetched. Empty lookups are not cached as successful posters.
+- Card poster resolution uses a fast provider-page metadata lookup; the UI keeps the search thumbnail visible while the canonical poster is fetched. Empty lookups are not cached as successful posters.
 
 ## v8 changes
 - Listing thumbnails prefer the uploader's poster attributes (`data-thumb_url`, `data-mediumthumb`, `data-src`) over srcset frames.
